@@ -9,6 +9,7 @@ import os
 import sys
 import traceback
 from glob import glob
+import contextlib
 
 import torch.cuda
 import spacy
@@ -405,7 +406,7 @@ def clean_line(line: str) -> str:
 def main(file_path, pick_manually, speed, book_year='', output_folder='.',
          max_chapters=None, max_sentences=None, selected_chapters=None, post_event=None, audio_prompt_wav=None, batch_files=None, ignore_list=None, should_stop=None,
          repetition_penalty=1.1, min_p=0.02, top_p=0.95, exaggeration=0.4, cfg_weight=0.8, temperature=0.85,
-         enable_silence_trimming=False, silence_thresh=-50, min_silence_len=500, keep_silence=100):
+         enable_silence_trimming=False, silence_thresh=-50, min_silence_len=500, keep_silence=100, pause_seconds=0.0):
     """
     Main entry point for audiobook synthesis.
     - ignore_list: list of chapter names to ignore (case-insensitive substring match)
@@ -634,7 +635,8 @@ def main(file_path, pick_manually, speed, book_year='', output_folder='.',
             top_p=top_p,
             exaggeration=exaggeration,
             cfg_weight=cfg_weight,
-            temperature=temperature
+            temperature=temperature,
+            pause_seconds=pause_seconds
         )
         if should_stop():
             logging.info("Synthesis interrupted by user (after audio_segments).")
@@ -821,7 +823,7 @@ def print_selected_chapters(document_chapters, chapters):
 
 
 def gen_audio_segments(cb_model, nlp, text, speed, stats=None, max_sentences=None,
-                       post_event=None, should_stop=None, repetition_penalty=1.2, min_p=0.05, top_p=1.0, exaggeration=0.5, cfg_weight=0.5, temperature=0.8):  # Use spacy to split into sentences
+                       post_event=None, should_stop=None, repetition_penalty=1.2, min_p=0.05, top_p=1.0, exaggeration=0.5, cfg_weight=0.5, temperature=0.8, pause_seconds=0.0):  # Use spacy to split into sentences
 
     if should_stop is None:
         should_stop = lambda: False
@@ -859,16 +861,26 @@ def gen_audio_segments(cb_model, nlp, text, speed, stats=None, max_sentences=Non
         if not batch_text:
             continue
 
+        # 1. ADDED: Print a clean, Colab-safe progress update
+        logging.info(f"Generating audio... Batch {i + 1} of {total_batches} ({(i + 1) / total_batches * 100:.0f}%)")
 
-        wav = cb_model.generate(batch_text, repetition_penalty=repetition_penalty, min_p=min_p, top_p=top_p,
-                                exaggeration=exaggeration, cfg_weight=cfg_weight, temperature=temperature)
-        
-        # ADDED .cpu() to ensure tensor is pulled from VRAM safely
+        # 2. ADDED: Mute the model's internal spammy progress bar to prevent Colab from crashing
+
+        with open(os.devnull, 'w') as f, contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
+            wav = cb_model.generate(batch_text, repetition_penalty=repetition_penalty, min_p=min_p, top_p=top_p,
+                                    exaggeration=exaggeration, cfg_weight=cfg_weight, temperature=temperature)
+            
+        # 3. ADDED: RAM management from our previous step!
         audio_segments.append(wav.cpu().numpy().flatten())
-
-        # ADDED: Delete the tensor immediately and periodically clear cache
         del wav
-        if i % 5 == 0:  # Every 5 batches, force a cleanup
+        # --- NEW: ADD ARTIFICIAL SILENCE ---
+        # Define how many seconds of silence you want between paragraphs/batches
+        
+        # Create an array of pure zeros (silence). 24000 is the sample rate used by the TTS.
+        silence_chunk = np.zeros(int(24000 * pause_seconds), dtype=np.float32)
+        audio_segments.append(silence_chunk)
+        # -----------------------------------
+        if i % 5 == 0:
             import gc
             gc.collect()
             if torch.cuda.is_available():

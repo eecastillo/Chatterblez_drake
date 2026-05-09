@@ -36,6 +36,7 @@ def cli_main():
     parser.add_argument('--exaggeration', type=float, default=0.4, help='Exaggeration factor (default: 0.4)')
     parser.add_argument('--cfg-weight', type=float, default=0.8, help='CFG weight (default: 0.8)')
     parser.add_argument('--temperature', type=float, default=0.85, help='Temperature for sampling (default: 0.85)')
+    parser.add_argument('--pause-seconds', type=float, default=0.0, help='Seconds of artificial silence to add between batches (default: 0.0)')
 
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
@@ -102,6 +103,7 @@ def cli_main():
             silence_thresh=args.silence_thresh,
             min_silence_len=args.min_silence_len,
             keep_silence=args.keep_silence
+            pause_seconds=args.pause_seconds,
         )
     # Single file mode
     elif args.file:
@@ -129,6 +131,7 @@ def cli_main():
             silence_thresh=args.silence_thresh,
             min_silence_len=args.min_silence_len,
             keep_silence=args.keep_silence
+            pause_seconds=args.pause_seconds,
         )
     elapsed_time = time.time() - start_time
     logging.info(f"Script finished in {elapsed_time:.2f} seconds")
