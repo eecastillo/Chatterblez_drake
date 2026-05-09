@@ -621,26 +621,27 @@ def main(file_path, pick_manually, speed, book_year='', output_folder='.',
         start_time = time.time()
         if post_event and hasattr(chapter, "chapter_index"):
             post_event('CORE_CHAPTER_STARTED', chapter_index=chapter.chapter_index)
-        audio_segments = gen_audio_segments(
-            cb_model,
-            nlp,
-            text,
-            speed,
-            stats,
-            post_event=post_event,
-            max_sentences=max_sentences,
-            should_stop=should_stop,
-            repetition_penalty=repetition_penalty,
-            min_p=min_p,
-            top_p=top_p,
-            exaggeration=exaggeration,
-            cfg_weight=cfg_weight,
-            temperature=temperature,
-            pause_seconds=pause_seconds
-        )
+        # Open the file first, so we can stream data directly into it!
+        import soundfile as sf
+        has_audio = False
+        
+        with sf.SoundFile(chapter_wav_path, mode='w', samplerate=sample_rate, channels=1) as f:
+            for audio_chunk in gen_audio_segments(
+                cb_model, nlp, text, speed, stats,
+                post_event=post_event, max_sentences=max_sentences, should_stop=should_stop,
+                repetition_penalty=repetition_penalty, min_p=min_p, top_p=top_p,
+                exaggeration=exaggeration, cfg_weight=cfg_weight, temperature=temperature
+            ):
+                # Write to hard drive instantly, saving RAM!
+                f.write(audio_chunk)
+                has_audio = True
+
         if should_stop():
             logging.info("Synthesis interrupted by user (after audio_segments).")
             break
+            
+        if has_audio:
+            # (No more np.concatenate! We already wrote the file.)
         if audio_segments:
             final_audio = np.concatenate(audio_segments)
             soundfile.write(chapter_wav_path, final_audio, sample_rate)
@@ -828,7 +829,7 @@ def gen_audio_segments(cb_model, nlp, text, speed, stats=None, max_sentences=Non
     if should_stop is None:
         should_stop = lambda: False
 
-    audio_segments = []
+    #audio_segments = []
     doc = nlp(text)
     sentences = list(doc.sents)
     batch_min_chars=150
@@ -853,7 +854,7 @@ def gen_audio_segments(cb_model, nlp, text, speed, stats=None, max_sentences=Non
     for i, batch_text in enumerate(batches):
         if should_stop():
             logging.info("Synthesis interrupted by user (batch loop).")
-            return audio_segments
+            return
         if max_sentences and i >= max_sentences:
             break
 
@@ -871,14 +872,17 @@ def gen_audio_segments(cb_model, nlp, text, speed, stats=None, max_sentences=Non
                                     exaggeration=exaggeration, cfg_weight=cfg_weight, temperature=temperature)
             
         # 3. ADDED: RAM management from our previous step!
-        audio_segments.append(wav.cpu().numpy().flatten())
+        #audio_segments.append(wav.cpu().numpy().flatten())
+        yield wav.cpu().numpy().flatten()
         del wav
         # --- NEW: ADD ARTIFICIAL SILENCE ---
         # Define how many seconds of silence you want between paragraphs/batches
         
-        # Create an array of pure zeros (silence). 24000 is the sample rate used by the TTS.
-        silence_chunk = np.zeros(int(24000 * pause_seconds), dtype=np.float32)
-        audio_segments.append(silence_chunk)
+        if pause_seconds > 0:
+            # Create an array of pure zeros (silence). 24000 is the sample rate used by the TTS.
+            silence_chunk = np.zeros(int(24000 * pause_seconds), dtype=np.float32)
+            #audio_segments.append(silence_chunk)
+            yield silence_chunk
         # -----------------------------------
         if i % 5 == 0:
             import gc
@@ -891,7 +895,7 @@ def gen_audio_segments(cb_model, nlp, text, speed, stats=None, max_sentences=Non
             update_stats(stats, len(batch_text))
             if post_event:
                 post_event('CORE_PROGRESS', stats=stats)
-    return audio_segments
+    #return audio_segments
 
 
 def extract_chapter_number(chapter_name):
