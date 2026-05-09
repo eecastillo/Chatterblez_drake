@@ -102,7 +102,7 @@ def cli_main():
             enable_silence_trimming=args.enable_silence_trimming,
             silence_thresh=args.silence_thresh,
             min_silence_len=args.min_silence_len,
-            keep_silence=args.keep_silence
+            keep_silence=args.keep_silence,
             pause_seconds=args.pause_seconds,
         )
     # Single file mode
@@ -130,7 +130,7 @@ def cli_main():
             enable_silence_trimming=args.enable_silence_trimming,
             silence_thresh=args.silence_thresh,
             min_silence_len=args.min_silence_len,
-            keep_silence=args.keep_silence
+            keep_silence=args.keep_silence,s
             pause_seconds=args.pause_seconds,
         )
     elapsed_time = time.time() - start_time
