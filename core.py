@@ -642,6 +642,7 @@ def main(file_path, pick_manually, speed, book_year='', output_folder='.',
             
         if has_audio:
             # (No more np.concatenate! We already wrote the file.)
+            logging.info("No more np.concatenate! We already wrote the file.")
         if audio_segments:
             final_audio = np.concatenate(audio_segments)
             soundfile.write(chapter_wav_path, final_audio, sample_rate)
