@@ -640,12 +640,9 @@ def main(file_path, pick_manually, speed, book_year='', output_folder='.',
             logging.info("Synthesis interrupted by user (after audio_segments).")
             break
             
-        if has_audio:
+       if has_audio:
             # (No more np.concatenate! We already wrote the file.)
             logging.info("No more np.concatenate! We already wrote the file.")
-        if audio_segments:
-            final_audio = np.concatenate(audio_segments)
-            soundfile.write(chapter_wav_path, final_audio, sample_rate)
 
             if enable_silence_trimming:
                 trimmed_path = chapter_wav_path.with_suffix('.trimmed.wav')
@@ -669,14 +666,16 @@ def main(file_path, pick_manually, speed, book_year='', output_folder='.',
             if post_event and hasattr(chapter, "chapter_index"):
                 post_event('CORE_CHAPTER_FINISHED', chapter_index=chapter.chapter_index)
             logging.info(f'Chapter {i} read in {delta_seconds:.2f} seconds ({chars_per_sec:.0f} characters per second)')
+            
         else:
             logging.warning(f'Warning: No audio generated for chapter {i}')
             chapter_wav_files.remove(chapter_wav_path)
+            
         # ADDED: Force memory release after every chapter to save RAM
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-
+            
     if not chapter_wav_files:
         logging.error("No audio chapters were generated. Cannot create audiobook.")
         if post_event:
