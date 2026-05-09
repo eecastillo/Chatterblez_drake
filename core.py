@@ -37,6 +37,15 @@ from pydub.silence import split_on_silence
 from functools import lru_cache
 from ebooklib.epub import EpubReader
 
+#manual garbage collector
+import gc
+def clear_memory():
+    """Reclaims RAM and VRAM."""
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
 _original_read_file = EpubReader.read_file
 
 def _safe_read_file(self, name):
@@ -659,6 +668,10 @@ def main(file_path, pick_manually, speed, book_year='', output_folder='.',
         else:
             logging.warning(f'Warning: No audio generated for chapter {i}')
             chapter_wav_files.remove(chapter_wav_path)
+        # ADDED: Force memory release after every chapter to save RAM
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     if not chapter_wav_files:
         logging.error("No audio chapters were generated. Cannot create audiobook.")
@@ -849,7 +862,17 @@ def gen_audio_segments(cb_model, nlp, text, speed, stats=None, max_sentences=Non
 
         wav = cb_model.generate(batch_text, repetition_penalty=repetition_penalty, min_p=min_p, top_p=top_p,
                                 exaggeration=exaggeration, cfg_weight=cfg_weight, temperature=temperature)
-        audio_segments.append(wav.numpy().flatten())
+        
+        # ADDED .cpu() to ensure tensor is pulled from VRAM safely
+        audio_segments.append(wav.cpu().numpy().flatten())
+
+        # ADDED: Delete the tensor immediately and periodically clear cache
+        del wav
+        if i % 5 == 0:  # Every 5 batches, force a cleanup
+            import gc
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
         # Update statistics based on batch size
         if stats:
