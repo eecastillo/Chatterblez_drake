@@ -617,11 +617,11 @@ def main(file_path, pick_manually, speed, book_year='', output_folder='.',
             chapter_wav_files.remove(chapter_wav_path)
             continue
 
-        logging.info(f'Writing  {text}')
+logging.info(f'Writing  {text}')
         start_time = time.time()
         if post_event and hasattr(chapter, "chapter_index"):
             post_event('CORE_CHAPTER_STARTED', chapter_index=chapter.chapter_index)
-        # Open the file first, so we can stream data directly into it!
+
         import soundfile as sf
         has_audio = False
         
@@ -640,8 +640,7 @@ def main(file_path, pick_manually, speed, book_year='', output_folder='.',
             logging.info("Synthesis interrupted by user (after audio_segments).")
             break
             
-       if has_audio:
-            # (No more np.concatenate! We already wrote the file.)
+        if has_audio:
             logging.info("No more np.concatenate! We already wrote the file.")
 
             if enable_silence_trimming:
@@ -663,15 +662,19 @@ def main(file_path, pick_manually, speed, book_year='', output_folder='.',
             delta_seconds = end_time - start_time
             chars_per_sec = len(text) / delta_seconds
             logging.info('Chapter written to %s', chapter_wav_path)
+            
             if post_event and hasattr(chapter, "chapter_index"):
                 post_event('CORE_CHAPTER_FINISHED', chapter_index=chapter.chapter_index)
+                
             logging.info(f'Chapter {i} read in {delta_seconds:.2f} seconds ({chars_per_sec:.0f} characters per second)')
             
         else:
             logging.warning(f'Warning: No audio generated for chapter {i}')
-            chapter_wav_files.remove(chapter_wav_path)
+            if chapter_wav_path in chapter_wav_files:
+                chapter_wav_files.remove(chapter_wav_path)
             
-        # ADDED: Force memory release after every chapter to save RAM
+        # Force memory release after every chapter to save RAM
+        import gc
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
