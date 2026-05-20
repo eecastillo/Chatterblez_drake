@@ -16,7 +16,6 @@ import spacy
 import ebooklib
 import soundfile
 import numpy as np
-import librosa
 import time
 import shutil
 import subprocess
@@ -62,14 +61,11 @@ import perth
 if perth.PerthImplicitWatermarker is None:
     perth.PerthImplicitWatermarker = perth.DummyWatermarker
 
-def apply_voice_speed(audio_path: str, speed: float, target_sr: int = sample_rate):
-    """
-    Apply time-stretching to an audio file without changing pitch.
 
-    Args:
-        audio_path: Path to the audio file to modify in place.
-        speed: Playback speed multiplier (> 0). Values >1 speed up audio.
-        target_sr: Target sample rate for loading/writing.
+def apply_voice_speed(audio_path: str, speed: float, target_sr: int = 24000):
+    """
+    Apply time-stretching to an audio file without changing pitch, 
+    using FFmpeg's high-quality 'atempo' filter instead of librosa.
     """
     if not audio_path or speed is None:
         return
@@ -78,26 +74,38 @@ def apply_voice_speed(audio_path: str, speed: float, target_sr: int = sample_rat
         return
     if abs(speed - 1.0) < 1e-3:
         return
+
+    # FFmpeg's atempo filter technically only supports speeds between 0.5 and 100.0 in a single pass.
+    # We clamp the speed to ensure it doesn't crash if you enter an extreme number.
+    safe_speed = max(0.5, min(speed, 100.0))
+
+    logging.info(f"Applying voice speed {safe_speed:.2f}x to {audio_path} using FFmpeg...")
+    
+    audio_path_str = str(audio_path)
+    temp_path = audio_path_str + ".temp.wav"
+
+    # Build the FFmpeg command
+    command = [
+        'ffmpeg', 
+        '-y',                  # Overwrite output files without asking
+        '-i', audio_path_str,  # Input file
+        '-filter:a', f'atempo={safe_speed}', # The high-quality speed filter
+        '-vn',                 # Disable video just in case
+        temp_path              # Output file
+    ]
+
     try:
-        audio, sr = librosa.load(audio_path, sr=None, mono=False, res_type="soxr_vhq")
-
-        # time_stretch requires mono input — process per channel
-        if audio.ndim == 1:
-            stretched = librosa.effects.time_stretch(audio, rate=speed)
-        else:
-            stretched = np.vstack([
-                librosa.effects.time_stretch(ch, rate=speed)
-                for ch in audio  # audio shape: (channels, N)
-            ])
-
-        # soundfile expects (N, channels), librosa gives (channels, N)
-        out = stretched.T if stretched.ndim > 1 else stretched
-        soundfile.write(audio_path, out, sr)
-
-        logging.info(f"Applied voice speed {speed:.2f}x to {audio_path}")
-    except Exception as exc:
-        logging.error(f"Failed to apply voice speed {speed} to {audio_path}: {exc}")
-
+        # Run FFmpeg completely silently
+        subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        
+        # Replace the original file with our newly stretched, clean file
+        os.replace(temp_path, audio_path_str)
+        
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to apply voice speed to {audio_path}: {e}")
+        # Clean up the temp file if it failed
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
 def remove_silence_from_audio(input_file, output_file, silence_thresh=-50, min_silence_len=1000, keep_silence=200):
     """
