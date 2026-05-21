@@ -922,24 +922,30 @@ def extract_chapter_number(chapter_name):
     return float('inf') # Return a large number for chapters that don't match
 
 def find_document_chapters_and_extract_texts(book):
-    """Returns every chapter that is an ITEM_DOCUMENT and enriches each chapter with extracted_text."""
+    """Returns chapters based on the official EPUB spine (Table of Contents) reading order."""
     document_chapters = []
-    for chapter in book.get_items():
-        if chapter.get_type() != ebooklib.ITEM_DOCUMENT:
-            continue
-        xml = chapter.get_body_content()
-        soup = BeautifulSoup(xml, features='lxml')
-        chapter.extracted_text = ''
-        html_content_tags = ['title', 'p', 'h1', 'h2', 'h3', 'h4', 'li']
-        for text in [c.text.strip() for c in soup.find_all(html_content_tags) if c.text]:
-            if not text.endswith('.'):
-                text += '.'
-            chapter.extracted_text += text + '\n'
-        document_chapters.append(chapter)
+    
+    # Iterate through the spine to get the exact reading order programmed by the publisher
+    for item_id, linear in book.spine:
+        chapter = book.get_item_with_id(item_id)
+        
+        if chapter and chapter.get_type() == ebooklib.ITEM_DOCUMENT:
+            name = chapter.get_name().lower()
+            # Skip obvious non-story elements like the cover and title page
+            if "cover" in name or "title" in name or "nav" in name:
+                continue
 
-    # Sort chapters numerically based on their names
-    document_chapters.sort(key=lambda c: extract_chapter_number(c.get_name()))
+            xml = chapter.get_body_content()
+            soup = BeautifulSoup(xml, features='lxml')
+            chapter.extracted_text = ''
+            html_content_tags = ['title', 'p', 'h1', 'h2', 'h3', 'h4', 'li']
+            for text in [c.text.strip() for c in soup.find_all(html_content_tags) if c.text]:
+                if not text.endswith('.'):
+                    text += '.'
+                chapter.extracted_text += text + '\n'
+            document_chapters.append(chapter)
 
+    # NO MORE SORTING! Sorting scrambles the publisher's perfect Spine order.
     for i, c in enumerate(document_chapters):
         c.chapter_index = i
     return document_chapters
@@ -964,11 +970,9 @@ def chapter_beginning_one_liner(c, chars=20):
 
 
 def find_good_chapters(document_chapters):
-    chapters = [c for c in document_chapters if c.get_type() == ebooklib.ITEM_DOCUMENT and is_chapter(c)]
-    if len(chapters) == 0:
-        logging.info('Not easy to recognize the chapters, defaulting to all non-empty documents.')
-        chapters = [c for c in document_chapters if
-                    c.get_type() == ebooklib.ITEM_DOCUMENT and len(c.extracted_text) > 10]
+    # Since we are using the official Spine, trust it! 
+    # Just filter out any pages that are completely blank or too short to be a story chapter.
+    chapters = [c for c in document_chapters if len(c.extracted_text) > 100]
     return chapters
 
 
